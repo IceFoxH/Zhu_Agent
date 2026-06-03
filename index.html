@@ -813,6 +813,38 @@
   let sessionId = localStorage.getItem(SESSION_KEY) || genId();
   localStorage.setItem(SESSION_KEY, sessionId);
 
+  // ===== 聊天历史持久化（localStorage） =====
+  const MSGS_KEY = 'zhuzhu_chat_history';
+  let chatHistory = [];
+
+  function saveHistory() {
+    try {
+      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
+      all[sessionId] = chatHistory;
+      localStorage.setItem(MSGS_KEY, JSON.stringify(all));
+    } catch (_) {}
+  }
+
+  function loadHistory() {
+    try {
+      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
+      const saved = all[sessionId];
+      if (saved && saved.length) {
+        chatHistory = saved;
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function clearHistory() {
+    try {
+      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
+      delete all[sessionId];
+      localStorage.setItem(MSGS_KEY, JSON.stringify(all));
+    } catch (_) {}
+  }
+
   // ===== DOM 引用 =====
   const messagesEl = document.getElementById('chatMessages');
   const inputEl = document.getElementById('chatInput');
@@ -823,9 +855,9 @@
 
   // ===== 快捷问题 =====
   const QUICK_QS = [
-    '你现在在做什么？',
-    '你爸爸是谁？',
-    '你妈妈是谁？',
+    '你现在在干什么？',
+    '你爸比是谁？',
+    '你妈咪是谁？',
   ];
 
   QUICK_QS.forEach(text => {
@@ -840,7 +872,7 @@
   });
 
   // ===== UI 渲染 =====
-  function addMessage(text, sender) {
+  function renderMessage(text, sender) {
     const div = document.createElement('div');
     div.className = 'message ' + sender;
 
@@ -861,6 +893,12 @@
 
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function addMessage(text, sender) {
+    renderMessage(text, sender);
+    chatHistory.push({ sender, text });
+    saveHistory();
   }
 
   function showTyping() {
@@ -954,8 +992,10 @@
         body: JSON.stringify({ sessionId }),
       });
     } catch (_) { /* ignore */ }
+    clearHistory();
     sessionId = genId();
     localStorage.setItem(SESSION_KEY, sessionId);
+    chatHistory = [];
     messagesEl.innerHTML = '';
     addMessage('你好呀～新的一轮聊天开始啦 🐱✨ 我是珠珠，想问什么尽管说～', 'bot');
   }
@@ -967,8 +1007,16 @@
   });
   resetBtn.addEventListener('click', resetChat);
 
-  // ===== 初始欢迎 =====
-  addMessage('你好呀～欢迎来到我的小窝 🐱✨ 我是珠珠，一个正在快乐成长的小胖子！随便问我什么都可以～', 'bot');
+  // ===== 初始加载：恢复历史消息或显示欢迎 =====
+  (function init() {
+    if (loadHistory()) {
+      chatHistory.forEach(function (msg) {
+        renderMessage(msg.text, msg.sender);
+      });
+    } else {
+      addMessage('你好呀～欢迎来到我的小窝 🐱✨ 我是珠珠，一个正在快乐成长的小胖子！随便问我什么都可以～', 'bot');
+    }
+  })();
 </script>
 
 </body>

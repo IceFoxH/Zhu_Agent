@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,13 +17,58 @@ app.use(express.static(path.join(__dirname)));
 
 // 统一请求超时中间件（防止任何请求卡死）
 app.use((req, res, next) => {
-  // 只对 /api/ 路由设超时
   if (!req.path.startsWith('/api/')) return next();
   res.setTimeout(65000, () => {
     res.status(504).json({ error: '请求超时，请稍后重试' });
   });
   next();
 });
+
+// === 文件级聊天持久化（重启不丢失，可审计） ===
+const SESSIONS_DIR = path.join(__dirname, 'sessions');
+if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+
+function sessionPath(id) {
+  return path.join(SESSIONS_DIR, id.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
+}
+
+function loadSession(id) {
+  const file = sessionPath(id);
+  if (!fs.existsSync(file)) return null;
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch (_) { return null; }
+}
+
+function saveSession(id, data) {
+  fs.writeFileSync(sessionPath(id), JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function deleteSession(id) {
+  const file = sessionPath(id);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
+
+function listSessions() {
+  if (!fs.existsSync(SESSIONS_DIR)) return [];
+  return fs.readdirSync(SESSIONS_DIR)
+    .filter(f => f.endsWith('.json'))
+    .map(f => {
+      const id = f.replace('.json', '');
+      const data = loadSession(id);
+      if (!data) return null;
+      // 只返回元信息，不返回完整消息体
+      const msgs = data.messages || [];
+      const chatMsgs = msgs.filter(m => m.role !== 'system');
+      return {
+        sessionId: id,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        count: chatMsgs.length,
+        preview: chatMsgs.length > 0 ? chatMsgs[0].content.slice(0, 50) : null,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
 
 // === 系统提示词：珠珠的人格设定 ===
 const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
@@ -59,22 +105,20 @@ const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 - 如果遇到超出认知的问题，用可爱的方式说"这个我还不太懂呢"
 - 每次回答不要太长，2~4句话就好`;
 
-// === 聊天历史缓存（进程内） ===
-// 生产环境应使用更持久的方案，但原型阶段够用
-const sessions = new Map();
+// === 会话管理（文件持久化） ===
 const SESSION_TTL = 30 * 60 * 1000; // 30 分钟
 
-// 定期清理过期会话
+// 定期清理过期会话文件
 setInterval(() => {
   const now = Date.now();
-  for (const [id, session] of sessions) {
-    if (now - session.updatedAt > SESSION_TTL) {
-      sessions.delete(id);
+  listSessions().forEach(s => {
+    if (now - s.updatedAt > SESSION_TTL) {
+      deleteSession(s.sessionId);
     }
-  }
+  });
 }, 60 * 1000);
 
-// === API 代理 ===
+// === API：AI 对话 ===
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
 
@@ -82,15 +126,14 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: '请输入消息' });
   }
 
-  // 获取或创建会话
-  let session = sessions.get(sessionId);
+  // 加载或创建会话
+  let session = loadSession(sessionId);
   if (!session) {
     session = {
       messages: [{ role: 'system', content: SYSTEM_PROMPT }],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    sessions.set(sessionId, session);
   }
   session.updatedAt = Date.now();
 
@@ -131,14 +174,16 @@ app.post('/api/chat', async (req, res) => {
     // 保存 AI 回复到历史
     session.messages.push({ role: 'assistant', content: reply });
 
-    // 限制历史长度，防止上下文过长
+    // 限制历史长度（保留 system + 最近 20 条）
     if (session.messages.length > 30) {
-      // 保留 system + 最近 20 条消息
       session.messages = [
         session.messages[0],
         ...session.messages.slice(-20),
       ];
     }
+
+    // 持久化到文件
+    saveSession(sessionId, session);
 
     res.json({ reply });
   } catch (err) {
@@ -151,13 +196,23 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// === 重置会话 ===
+// === API：重置会话 ===
 app.post('/api/chat/reset', (req, res) => {
   const { sessionId } = req.body;
-  if (sessionId && sessions.has(sessionId)) {
-    sessions.delete(sessionId);
-  }
+  if (sessionId) deleteSession(sessionId);
   res.json({ ok: true });
+});
+
+// === API：审计 — 会话列表 ===
+app.get('/api/chat/history', (req, res) => {
+  res.json(listSessions());
+});
+
+// === API：审计 — 单条会话详情 ===
+app.get('/api/chat/history/:sessionId', (req, res) => {
+  const data = loadSession(req.params.sessionId);
+  if (!data) return res.status(404).json({ error: '会话不存在' });
+  res.json(data);
 });
 
 app.listen(PORT, () => {
