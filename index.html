@@ -39,16 +39,16 @@
       position: fixed;
       pointer-events: none;
       z-index: 0;
-      opacity: 0.18;
+      opacity: 0.15;
       animation: floatDeco 12s ease-in-out infinite;
-      font-size: 48px;
+      font-size: 96px;
       line-height: 1;
     }
 
     .bg-deco:nth-child(1) { top: 6%; left: 4%; animation-delay: 0s; }
-    .bg-deco:nth-child(2) { top: 15%; right: 6%; animation-delay: 3s; font-size: 36px; }
-    .bg-deco:nth-child(3) { bottom: 20%; left: 6%; animation-delay: 6s; font-size: 40px; }
-    .bg-deco:nth-child(4) { bottom: 12%; right: 5%; animation-delay: 9s; font-size: 32px; }
+    .bg-deco:nth-child(2) { top: 15%; right: 6%; animation-delay: 3s; font-size: 72px; }
+    .bg-deco:nth-child(3) { bottom: 20%; left: 6%; animation-delay: 6s; font-size: 80px; }
+    .bg-deco:nth-child(4) { bottom: 12%; right: 5%; animation-delay: 9s; font-size: 64px; }
 
     @keyframes floatDeco {
       0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -278,6 +278,79 @@
       background: #FFF0F3;
       border-color: #FFB3C1;
       color: #E06B80;
+    }
+
+    /* ===== 日常轮播 ===== */
+    .carousel-card {
+      padding-bottom: 14px;
+    }
+    .carousel {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #F5F0F0;
+      aspect-ratio: 1 / 1;
+    }
+    .carousel-track {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.4s ease;
+    }
+    .carousel-track img {
+      width: 100%;
+      height: 100%;
+      flex-shrink: 0;
+      object-fit: cover;
+      display: block;
+    }
+    .carousel-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(4px);
+      color: #D6456A;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 2;
+    }
+    .carousel-btn:hover {
+      background: rgba(255, 255, 255, 0.85);
+    }
+    .carousel-prev { left: 8px; }
+    .carousel-next { right: 8px; }
+    .carousel-dots {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      z-index: 2;
+    }
+    .carousel-dots .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1.5px solid rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .carousel-dots .dot.active {
+      background: #FFF;
+      border-color: #FF8FA3;
+      transform: scale(1.25);
     }
 
     /* ===== 聊天区 ===== */
@@ -732,6 +805,17 @@
       <div class="tagline">一个正在快乐成长的小胖子 ✨</div>
     </div>
 
+    <!-- ===== 珠珠的日常轮播（图片由 JS 动态加载） ===== -->
+    <div class="card carousel-card" id="dailyCard" style="display:none">
+      <div class="card-title">珠珠的日常</div>
+      <div class="carousel" id="carousel">
+        <div class="carousel-track" id="carouselTrack"></div>
+        <button class="carousel-btn carousel-prev" id="carouselPrev" aria-label="上一张">‹</button>
+        <button class="carousel-btn carousel-next" id="carouselNext" aria-label="下一张">›</button>
+        <div class="carousel-dots" id="carouselDots"></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">关于珠珠</div>
       <div class="info-grid">
@@ -938,6 +1022,96 @@
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+
+  // ===== 日常轮播（从后端自动获取图片） =====
+  (async function initCarousel() {
+    const card = document.getElementById('dailyCard');
+    const track = document.getElementById('carouselTrack');
+    const prevBtn = document.getElementById('carouselPrev');
+    const nextBtn = document.getElementById('carouselNext');
+    const dotsEl = document.getElementById('carouselDots');
+    if (!track) return;
+
+    // 从 API 获取图片列表
+    var files;
+    try {
+      var res = await fetch('/api/images');
+      if (!res.ok) return;
+      files = await res.json();
+    } catch (_) { return; }
+    if (!files || files.length === 0) return;
+
+    // 构建图片
+    var total = files.length;
+    for (var i = 0; i < total; i++) {
+      var img = document.createElement('img');
+      img.src = 'pic/' + files[i];
+      img.alt = '日常 ' + (i + 1);
+      track.appendChild(img);
+    }
+
+    // 显示卡片
+    card.style.display = '';
+
+    // 只有 1 张图不显示控件
+    if (total < 2) {
+      prevBtn.style.display = 'none';
+      nextBtn.style.display = 'none';
+      dotsEl.style.display = 'none';
+      return;
+    }
+
+    var current = 0;
+    var timer = null;
+    var INTERVAL = 3500;
+
+    function goTo(index) {
+      if (index < 0) index = total - 1;
+      if (index >= total) index = 0;
+      current = index;
+      track.style.transform = 'translateX(-' + (current * 100) + '%)';
+      var dots = dotsEl.querySelectorAll('.dot');
+      for (var d = 0; d < dots.length; d++) {
+        dots[d].classList.toggle('active', d === current);
+      }
+    }
+
+    function advance() { goTo(current + 1); }
+
+    function startAuto() {
+      stopAuto();
+      timer = setInterval(advance, INTERVAL);
+    }
+    function stopAuto() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+
+    // 创建圆点
+    for (var j = 0; j < total; j++) {
+      (function (idx) {
+        var dot = document.createElement('span');
+        dot.className = 'dot' + (idx === 0 ? ' active' : '');
+        dot.addEventListener('click', function () {
+          goTo(idx);
+          startAuto();
+        });
+        dotsEl.appendChild(dot);
+      })(j);
+    }
+
+    // 按钮事件
+    prevBtn.addEventListener('click', function () { goTo(current - 1); startAuto(); });
+    nextBtn.addEventListener('click', function () { goTo(current + 1); startAuto(); });
+
+    // 悬停/触摸暂停
+    var el = document.getElementById('carousel');
+    el.addEventListener('mouseenter', stopAuto);
+    el.addEventListener('mouseleave', startAuto);
+    el.addEventListener('touchstart', stopAuto);
+    el.addEventListener('touchend', startAuto);
+
+    startAuto();
+  })();
 
   // ===== API 调用 =====
   async function sendMessage(text) {

@@ -215,6 +215,16 @@ app.get('/api/chat/history/:sessionId', (req, res) => {
   res.json(data);
 });
 
+// === API：获取 pic/ 目录下所有图片 ===
+app.get('/api/images', (req, res) => {
+  const picDir = path.join(__dirname, 'pic');
+  if (!fs.existsSync(picDir)) return res.json([]);
+  const files = fs.readdirSync(picDir)
+    .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
+    .sort();
+  res.json(files);
+});
+
 app.listen(PORT, () => {
   console.log(`\n✨ 珠珠的小窝已启动！`);
   console.log(`   http://localhost:${PORT}`);
