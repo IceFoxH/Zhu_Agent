@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "WebSearch",
+      "Bash(sed -i '' '24s/.*/      display: flex;/' index.html)",
+      "Bash(sed -i '' '25s/.*/      flex-direction: column;/' index.html)",
+      "Bash(sed -i '' '26s/.*/      align-items: center;/' index.html)",
+      "Bash(sed -i '' '27d' index.html)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

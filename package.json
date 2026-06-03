@@ -1,0 +1,12 @@
+{
+  "name": "zhuzhu-homepage",
+  "version": "1.0.0",
+  "description": "珠珠的小窝 — 个人主页",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
