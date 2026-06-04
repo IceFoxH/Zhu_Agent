@@ -906,7 +906,10 @@
     try { localStorage.removeItem(MSGS_KEY); } catch (_) {}
   }
 
-  // ===== DOM
+  // ===== DOM 引用 =====
+  const messagesEl = document.getElementById('chatMessages');
+  const inputEl = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
   const resetBtn = document.getElementById('resetBtn');
   const quickEl = document.getElementById('quickQuestions');
   let isLoading = false;

@@ -15,61 +15,6 @@ if (!API_KEY) {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname)));
 
-// 统一请求超时中间件（防止任何请求卡死）
-app.use((req, res, next) => {
-  if (!req.path.startsWith('/api/')) return next();
-  res.setTimeout(65000, () => {
-    res.status(504).json({ error: '请求超时，请稍后重试' });
-  });
-  next();
-});
-
-// === 文件级聊天持久化（重启不丢失，可审计） ===
-const SESSIONS_DIR = path.join(__dirname, 'sessions');
-if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
-
-function sessionPath(id) {
-  return path.join(SESSIONS_DIR, id.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
-}
-
-function loadSession(id) {
-  const file = sessionPath(id);
-  if (!fs.existsSync(file)) return null;
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch (_) { return null; }
-}
-
-function saveSession(id, data) {
-  fs.writeFileSync(sessionPath(id), JSON.stringify(data, null, 2), 'utf-8');
-}
-
-function deleteSession(id) {
-  const file = sessionPath(id);
-  if (fs.existsSync(file)) fs.unlinkSync(file);
-}
-
-function listSessions() {
-  if (!fs.existsSync(SESSIONS_DIR)) return [];
-  return fs.readdirSync(SESSIONS_DIR)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
-      const id = f.replace('.json', '');
-      const data = loadSession(id);
-      if (!data) return null;
-      // 只返回元信息，不返回完整消息体
-      const msgs = data.messages || [];
-      const chatMsgs = msgs.filter(m => m.role !== 'system');
-      return {
-        sessionId: id,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        count: chatMsgs.length,
-        preview: chatMsgs.length > 0 ? chatMsgs[0].content.slice(0, 50) : null,
-      };
-    })
-    .filter(Boolean)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-}
-
 // === 系统提示词：珠珠的人格设定 ===
 const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 
@@ -105,30 +50,24 @@ const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 - 如果遇到超出认知的问题，用可爱的方式说"这个我还不太懂呢"
 - 每次回答不要太长，2~4句话就好`;
 
-// === 会话管理（文件持久化） ===
-// 所有对话永久保留，不自动删除
-
-// === API：AI 对话 ===
+// === API：AI 对话（历史由前端发送，服务端无状态） ===
 app.post('/api/chat', async (req, res) => {
-  const { message, sessionId } = req.body;
+  const { message, history } = req.body;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: '请输入消息' });
   }
 
-  // 加载或创建会话
-  let session = loadSession(sessionId);
-  if (!session) {
-    session = {
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-  }
-  session.updatedAt = Date.now();
+  const chatMessages = (history || []).map((msg) => ({
+    role: msg.sender === 'bot' ? 'assistant' : 'user',
+    content: msg.text,
+  }));
 
-  // 添加用户消息
-  session.messages.push({ role: 'user', content: message.trim() });
+  const apiMessages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...chatMessages,
+    { role: 'user', content: message.trim() },
+  ];
 
   try {
     const controller = new AbortController();
@@ -142,7 +81,7 @@ app.post('/api/chat', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'deepseek-v4-flash',
-        messages: session.messages,
+        messages: apiMessages,
         stream: false,
       }),
       signal: controller.signal,
@@ -152,57 +91,20 @@ app.post('/api/chat', async (req, res) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('DeepSeek API 错误:', response.status, errorText);
-      return res.status(response.status).json({
-        error: `API 调用失败 (${response.status})`,
-        detail: errorText,
-      });
+      return res.status(response.status).json({ error: `API 调用失败 (${response.status})` });
     }
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || '唔…我没想好怎么回答 🤔';
 
-    // 保存 AI 回复到历史
-    session.messages.push({ role: 'assistant', content: reply });
-
-    // 限制历史长度（保留 system + 最近 20 条）
-    if (session.messages.length > 30) {
-      session.messages = [
-        session.messages[0],
-        ...session.messages.slice(-20),
-      ];
-    }
-
-    // 持久化到文件
-    saveSession(sessionId, session);
-
     res.json({ reply });
   } catch (err) {
     if (err.name === 'AbortError') {
-      console.error('请求超时');
       return res.status(504).json({ error: 'AI 思考超时，请重试或换个问法' });
     }
     console.error('请求失败:', err.message);
     res.status(500).json({ error: '网络请求失败，请稍后重试' });
   }
-});
-
-// === API：重置会话 ===
-app.post('/api/chat/reset', (req, res) => {
-  const { sessionId } = req.body;
-  if (sessionId) deleteSession(sessionId);
-  res.json({ ok: true });
-});
-
-// === API：审计 — 会话列表 ===
-app.get('/api/chat/history', (req, res) => {
-  res.json(listSessions());
-});
-
-// === API：审计 — 单条会话详情 ===
-app.get('/api/chat/history/:sessionId', (req, res) => {
-  const data = loadSession(req.params.sessionId);
-  if (!data) return res.status(404).json({ error: '会话不存在' });
-  res.json(data);
 });
 
 // === API：获取 pic/ 目录下所有图片 ===
