@@ -3,7 +3,7 @@ const path = require("path");
 
 export async function onRequestGet(context) {
   try {
-    const picDir = path.join(process.cwd(), "pic");
+    const picDir = path.join(__dirname, "../../pic");
     if (!fs.existsSync(picDir)) {
       return new Response(JSON.stringify([]), {
         status: 200,
