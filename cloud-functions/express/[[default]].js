@@ -13,9 +13,6 @@ if (!API_KEY) {
 
 app.use(express.json({ limit: "1mb" }));
 
-// 静态文件 — 指向项目根目录
-app.use(express.static(ROOT));
-
 // ===== 系统提示词：珠珠的人格设定 =====
 const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 
@@ -122,4 +119,7 @@ app.get("/api/images", (req, res) => {
   res.json(files);
 });
 
-module.exports = app;
+// 包装为云函数运行时可识别的 onRequest handler
+module.exports = (request, response) => {
+  app(request, response);
+};
