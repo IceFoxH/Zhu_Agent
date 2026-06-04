@@ -1,11 +1,8 @@
-import express from "express";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import fs from "fs";
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const ROOT = join(__dirname, "../..");
+const ROOT = path.join(__dirname, "../..");
 
 const app = express();
 const API_KEY = process.env.DEEPSEEK_API_KEY;
@@ -54,7 +51,7 @@ const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 - 如果遇到超出认知的问题，用可爱的方式说"这个我还不太懂呢"
 - 每次回答不要太长，2~4句话就好`;
 
-// ===== API：AI 对话（无服务端存储，历史由前端发送） =====
+// ===== API：AI 对话 =====
 app.post("/api/chat", async (req, res) => {
   const { message, history } = req.body;
 
@@ -62,7 +59,6 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "请输入消息" });
   }
 
-  // 将前端历史转换为 DeepSeek API 格式
   const chatMessages = (history || []).map((msg) => ({
     role: msg.sender === "bot" ? "assistant" : "user",
     content: msg.text,
@@ -82,7 +78,7 @@ app.post("/api/chat", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`,
+        "Authorization": `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({
         model: "deepseek-v4-flash",
@@ -117,7 +113,7 @@ app.post("/api/chat", async (req, res) => {
 
 // ===== API：获取 pic/ 目录下所有图片 =====
 app.get("/api/images", (req, res) => {
-  const picDir = join(ROOT, "pic");
+  const picDir = path.join(ROOT, "pic");
   if (!fs.existsSync(picDir)) return res.json([]);
   const files = fs
     .readdirSync(picDir)
@@ -126,4 +122,4 @@ app.get("/api/images", (req, res) => {
   res.json(files);
 });
 
-export default app;
+module.exports = app;
