@@ -806,7 +806,7 @@
     </div>
 
     <!-- ===== 珠珠的日常轮播（图片由 JS 动态加载） ===== -->
-    <div class="card carousel-card" id="dailyCard" style="display:none">
+    <div class="card carousel-card" id="dailyCard" style="display:none" data-images="pic1.jpg,pic2.jpg,pic3.jpg">
       <div class="card-title">珠珠的日常</div>
       <div class="carousel" id="carousel">
         <div class="carousel-track" id="carouselTrack"></div>
@@ -1010,13 +1010,9 @@
     const dotsEl = document.getElementById('carouselDots');
     if (!track) return;
 
-    // 从 API 获取图片列表
-    var files;
-    try {
-      var res = await fetch('/api/images');
-      if (!res.ok) return;
-      files = await res.json();
-    } catch (_) { return; }
+    // 从 data-images 属性读取图片列表
+    var imagesAttr = card ? card.getAttribute('data-images') : '';
+    var files = imagesAttr ? imagesAttr.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
     if (!files || files.length === 0) return;
 
     // 构建图片
