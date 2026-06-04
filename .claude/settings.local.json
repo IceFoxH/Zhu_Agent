@@ -14,7 +14,10 @@
       "Bash(curl -s http://localhost:3000/api/chat/history)",
       "Bash(python3 -m json.tool)",
       "Bash(git remote *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(DEEPSEEK_API_KEY=sk-test node *)",
+      "Bash(node --check /dev/stdin)",
+      "Bash(node -e ' *)"
     ]
   }
 }
