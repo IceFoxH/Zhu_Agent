@@ -1,7 +1,26 @@
+const fs = require("fs");
+const path = require("path");
+
 export async function onRequestGet(context) {
-  const IMAGE_FILES = ["pic1.jpg", "pic2.jpg", "pic3.jpg"];
-  return new Response(JSON.stringify(IMAGE_FILES), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  try {
+    const picDir = path.join(process.cwd(), "pic");
+    if (!fs.existsSync(picDir)) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const files = fs.readdirSync(picDir)
+      .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
+      .sort();
+    return new Response(JSON.stringify(files), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
