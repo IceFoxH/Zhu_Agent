@@ -1,8 +1,4 @@
 const express = require("express");
-const path = require("path");
-const fs = require("fs");
-
-const ROOT = path.join(__dirname, "../..");
 
 const app = express();
 const API_KEY = process.env.DEEPSEEK_API_KEY;
@@ -48,8 +44,11 @@ const SYSTEM_PROMPT = `你是珠珠，一个正在快乐成长的小胖子。
 - 如果遇到超出认知的问题，用可爱的方式说"这个我还不太懂呢"
 - 每次回答不要太长，2~4句话就好`;
 
+// pic 目录下的图片文件名列表（云函数环境无法通过 fs 访问静态资源目录，故硬编码）
+const IMAGE_FILES = ["pic1.jpg", "pic2.jpg", "pic3.jpg"];
+
 // ===== API：AI 对话 =====
-app.post("/api/chat", async (req, res) => {
+app.post("/express/api/chat", async (req, res) => {
   const { message, history } = req.body;
 
   if (!message || typeof message !== "string" || !message.trim()) {
@@ -108,18 +107,90 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// ===== API：获取 pic/ 目录下所有图片 =====
-app.get("/api/images", (req, res) => {
-  const picDir = path.join(ROOT, "pic");
-  if (!fs.existsSync(picDir)) return res.json([]);
-  const files = fs
-    .readdirSync(picDir)
-    .filter((f) => /\.(jpg|jpeg|png|gif|webp)$/i.test(f))
-    .sort();
-  res.json(files);
+// ===== API：获取图片列表 =====
+app.get("/express/api/images", (req, res) => {
+  res.json(IMAGE_FILES);
 });
 
-// 包装为云函数运行时可识别的 onRequest handler
-module.exports = (request, response) => {
-  app(request, response);
-};
+// ===== Node Functions 标准入口 =====
+export async function onRequest(context) {
+  return new Promise((resolve, reject) => {
+    const { request } = context;
+
+    // 将 Web Request 转换为 Node.js IncomingMessage 兼容对象
+    const url = new URL(request.url);
+    const method = request.method;
+
+    // 构造 Express 能理解的 req/res
+    const req = {
+      method,
+      url: url.pathname + url.search,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
+      headers: Object.fromEntries(request.headers),
+      body: null,
+      get(key) {
+        return this.headers[key.toLowerCase()];
+      },
+    };
+
+    const res = {
+      statusCode: 200,
+      _headers: {},
+      _body: "",
+      setHeader(key, value) {
+        this._headers[key.toLowerCase()] = value;
+      },
+      getHeader(key) {
+        return this._headers[key.toLowerCase()];
+      },
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(data) {
+        this._headers["content-type"] = "application/json";
+        this._body = JSON.stringify(data);
+        this._end();
+      },
+      send(data) {
+        if (typeof data === "object") {
+          this._headers["content-type"] = "application/json";
+          this._body = JSON.stringify(data);
+        } else {
+          this._body = String(data);
+        }
+        this._end();
+      },
+      end(data) {
+        if (data) this._body = String(data);
+        this._end();
+      },
+      _ended: false,
+      _end() {
+        if (this._ended) return;
+        this._ended = true;
+        const headers = { ...this._headers };
+        resolve(
+          new Response(this._body, {
+            status: this.statusCode,
+            headers,
+          })
+        );
+      },
+    };
+
+    // 解析请求体
+    if (method !== "GET" && method !== "HEAD") {
+      request
+        .text()
+        .then((bodyText) => {
+          req.body = bodyText ? JSON.parse(bodyText) : {};
+          app(req, res);
+        })
+        .catch(reject);
+    } else {
+      app(req, res);
+    }
+  });
+}
