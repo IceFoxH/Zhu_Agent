@@ -886,53 +886,27 @@
 
 <div class="grass-deco">🌱 🌿 🌸 🐾 🌸 🌿 🌱</div>
 
-<script>
-  // ===== 会话管理 =====
-  // 用 Date.now + Math.random 兼容 HTTP 环境（手机局域网访问）
-  function genId() {
-    try { return crypto.randomUUID(); } catch (_) {}
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-  }
-  const SESSION_KEY = 'zhuzhu_session_id';
-  let sessionId = localStorage.getItem(SESSION_KEY) || genId();
-  localStorage.setItem(SESSION_KEY, sessionId);
-
-  // ===== 聊天历史持久化（localStorage） =====
-  const MSGS_KEY = 'zhuzhu_chat_history';
+  // ===== 聊天历史（纯前端存储，全部发送给后端） =====
+  const MSGS_KEY = 'zhuzhu_chat';
   let chatHistory = [];
 
   function saveHistory() {
-    try {
-      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
-      all[sessionId] = chatHistory;
-      localStorage.setItem(MSGS_KEY, JSON.stringify(all));
-    } catch (_) {}
+    try { localStorage.setItem(MSGS_KEY, JSON.stringify(chatHistory)); } catch (_) {}
   }
 
   function loadHistory() {
     try {
-      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
-      const saved = all[sessionId];
-      if (saved && saved.length) {
-        chatHistory = saved;
-        return true;
-      }
+      const saved = localStorage.getItem(MSGS_KEY);
+      if (saved) { chatHistory = JSON.parse(saved); return true; }
     } catch (_) {}
     return false;
   }
 
   function clearHistory() {
-    try {
-      const all = JSON.parse(localStorage.getItem(MSGS_KEY) || '{}');
-      delete all[sessionId];
-      localStorage.setItem(MSGS_KEY, JSON.stringify(all));
-    } catch (_) {}
+    try { localStorage.removeItem(MSGS_KEY); } catch (_) {}
   }
 
-  // ===== DOM 引用 =====
-  const messagesEl = document.getElementById('chatMessages');
-  const inputEl = document.getElementById('chatInput');
-  const sendBtn = document.getElementById('sendBtn');
+  // ===== DOM
   const resetBtn = document.getElementById('resetBtn');
   const quickEl = document.getElementById('quickQuestions');
   let isLoading = false;
@@ -1130,7 +1104,7 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, sessionId }),
+        body: JSON.stringify({ message: msg, history: chatHistory }),
       });
 
       if (!res.ok) {
@@ -1144,7 +1118,7 @@
     } catch (err) {
       hideTyping();
       if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        showError('服务器连不上了，请确认已运行 npm start');
+        showError('服务器连接失败，请稍后重试');
       } else {
         showError(err.message || '出错了，请稍后重试');
       }
@@ -1159,16 +1133,7 @@
   // ===== 重置对话 =====
   async function resetChat() {
     if (isLoading) return;
-    try {
-      await fetch('/api/chat/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
-    } catch (_) { /* ignore */ }
     clearHistory();
-    sessionId = genId();
-    localStorage.setItem(SESSION_KEY, sessionId);
     chatHistory = [];
     messagesEl.innerHTML = '';
     addMessage('你好呀～新的一轮聊天开始啦 🐱✨ 我是珠珠，想问什么尽管说～', 'bot');
